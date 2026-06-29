@@ -318,10 +318,9 @@ class JiraMCPServer:
             if not server or not email or not api_token:
                 raise ValueError("Missing required environment variables: JIRA_SERVER, JIRA_EMAIL, JIRA_API_TOKEN")
             
-            from jira.client import TokenAuth
             self.jira_client = JIRA(
                 server=server,
-                token_auth=api_token
+                basic_auth=(email, api_token)
             )
             logger.info("Successfully connected to Jira")
             
