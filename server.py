@@ -31,6 +31,37 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def _adf_to_text(node):
+    """Convert Atlassian Document Format (ADF) to plain text."""
+    if isinstance(node, str):
+        return node
+    if not isinstance(node, dict):
+        return ""
+    ntype = node.get("type", "")
+    if ntype == "text":
+        text = node.get("text", "")
+        for mark in node.get("marks", []):
+            if mark.get("type") == "link":
+                href = mark.get("attrs", {}).get("href", "")
+                if href and href != text:
+                    text = f"[{text}]({href})"
+        return text
+    if ntype == "hardBreak":
+        return "\n"
+    parts = [_adf_to_text(c) for c in node.get("content", [])]
+    joined = "".join(parts)
+    if ntype == "paragraph":
+        return joined + "\n"
+    if ntype == "listItem":
+        return "- " + joined
+    if ntype == "bulletList":
+        return joined
+    if ntype == "heading":
+        level = node.get("attrs", {}).get("level", 1)
+        return "#" * level + " " + joined + "\n"
+    return joined
+
+
 class JiraMCPServer:
     def __init__(self):
         self.server = Server("jira-mcp-server")
@@ -53,6 +84,11 @@ class JiraMCPServer:
                             "issue_key": {
                                 "type": "string",
                                 "description": "The Jira issue key (e.g., PROJ-123)"
+                            },
+                            "custom_fields": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Optional list of custom field IDs to include (e.g., ['customfield_10200', 'customfield_10300']). Use get_field_ids to discover IDs by name. Values in Atlassian Document Format are rendered as text."
                             }
                         },
                         "required": ["issue_key"]
@@ -257,7 +293,10 @@ class JiraMCPServer:
             
             try:
                 if name == "get_issue":
-                    return await self._get_issue(arguments["issue_key"])
+                    return await self._get_issue(
+                        arguments["issue_key"],
+                        arguments.get("custom_fields")
+                    )
                 elif name == "search_issues":
                     return await self._search_issues(
                         arguments["jql"],
@@ -328,14 +367,15 @@ class JiraMCPServer:
             logger.error(f"Failed to initialize Jira client: {e}")
             raise
 
-    async def _get_issue(self, issue_key: str) -> List[TextContent]:
+    async def _get_issue(self, issue_key: str, custom_fields: Optional[List[str]] = None) -> List[TextContent]:
         """Get detailed information about a Jira issue"""
         try:
             if not self.jira_client:
                 return [TextContent(type="text", text="Jira client not initialized")]
-            
-            issue = self.jira_client.issue(issue_key)
-            
+
+            expand = "names" if custom_fields else None
+            issue = self.jira_client.issue(issue_key, expand=expand)
+
             issue_data = {
                 "key": issue.key,
                 "summary": issue.fields.summary,
@@ -350,7 +390,7 @@ class JiraMCPServer:
                 "issue_type": issue.fields.issuetype.name,
                 "url": f"{self.jira_client.server_url}/browse/{issue.key}"
             }
-            
+
             text = (f"**Issue: {issue_data['key']}**\n\n"
                    f"**Summary:** {issue_data['summary']}\n"
                    f"**Status:** {issue_data['status']}\n"
@@ -363,9 +403,28 @@ class JiraMCPServer:
                    f"**Updated:** {issue_data['updated']}\n"
                    f"**URL:** {issue_data['url']}\n\n"
                    f"**Description:**\n{issue_data['description']}")
-            
+
+            if custom_fields:
+                names = {}
+                try:
+                    names = dict(vars(issue.names))
+                except (TypeError, AttributeError):
+                    pass
+                for field_id in custom_fields:
+                    raw = getattr(issue.fields, field_id, None)
+                    if raw is None:
+                        continue
+                    if isinstance(raw, dict) and raw.get("type") == "doc":
+                        value = _adf_to_text(raw).strip()
+                    elif isinstance(raw, str):
+                        value = raw
+                    else:
+                        value = str(raw)
+                    label = names.get(field_id, field_id)
+                    text += f"\n\n**{label}:**\n{value}"
+
             return [TextContent(type="text", text=text)]
-            
+
         except Exception as e:
             return [TextContent(type="text", text=f"Error fetching issue {issue_key}: {str(e)}")]
 
@@ -626,6 +685,7 @@ class JiraMCPServer:
             
         except Exception as e:
             return [TextContent(type="text", text=f"Error fetching project issues: {str(e)}")]
+
 
     async def run(self):
         """Run the MCP server"""
