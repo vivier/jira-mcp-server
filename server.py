@@ -280,6 +280,24 @@ class JiraMCPServer:
                         },
                         "required": ["project_key"]
                     }
+                ),
+                Tool(
+                    name="get_field_ids",
+                    description="Look up custom field IDs by name for a given issue. Use this to discover the field ID for a field you know by display name (e.g., search for 'sprint' to find customfield_10200) before passing it to get_issue's custom_fields parameter.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "issue_key": {
+                                "type": "string",
+                                "description": "A Jira issue key to inspect (e.g., PROJ-123)"
+                            },
+                            "name_filter": {
+                                "type": "string",
+                                "description": "Case-insensitive substring to filter field names (e.g., 'sprint'). If omitted, returns all custom fields."
+                            }
+                        },
+                        "required": ["issue_key"]
+                    }
                 )
             ]
 
@@ -339,6 +357,11 @@ class JiraMCPServer:
                     return await self._get_project_issues(
                         arguments["project_key"],
                         arguments.get("max_results", 50)
+                    )
+                elif name == "get_field_ids":
+                    return await self._get_field_ids(
+                        arguments["issue_key"],
+                        arguments.get("name_filter")
                     )
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -686,6 +709,40 @@ class JiraMCPServer:
         except Exception as e:
             return [TextContent(type="text", text=f"Error fetching project issues: {str(e)}")]
 
+    async def _get_field_ids(self, issue_key: str, name_filter: Optional[str] = None) -> List[TextContent]:
+        """Look up custom field IDs by name for a given issue"""
+        try:
+            issue = self.jira_client.issue(issue_key, expand="names")
+            try:
+                names = dict(vars(issue.names))
+            except TypeError:
+                names = dict(issue.names)
+
+            results = []
+            for field_id, field_name in sorted(names.items()):
+                if not field_id.startswith("customfield_"):
+                    continue
+                if name_filter and name_filter.lower() not in field_name.lower():
+                    continue
+                value = getattr(issue.fields, field_id, None)
+                has_value = value is not None
+                results.append((field_id, field_name, has_value))
+
+            if not results:
+                msg = f"No custom fields found"
+                if name_filter:
+                    msg += f" matching '{name_filter}'"
+                return [TextContent(type="text", text=msg)]
+
+            text = f"**Custom fields for {issue_key}:**\n\n"
+            for field_id, field_name, has_value in results:
+                marker = " (has value)" if has_value else ""
+                text += f"• `{field_id}` — {field_name}{marker}\n"
+
+            return [TextContent(type="text", text=text)]
+
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
 
     async def run(self):
         """Run the MCP server"""
