@@ -4,7 +4,7 @@ A clean and focused Model Context Protocol (MCP) server that provides seamless i
 
 ## 🎯 Features
 
-- **11 Comprehensive Tools** for full Jira interaction
+- **13 Comprehensive Tools** for full Jira interaction
 - **Natural Language Interface** - Ask AI to manage your Jira work
 - **Real-time Updates** - Get current project status and issue information
 - **Secure Authentication** - API token-based authentication
@@ -15,7 +15,7 @@ A clean and focused Model Context Protocol (MCP) server that provides seamless i
 
 | Tool | Description | Example Usage |
 |------|-------------|---------------|
-| `get_issue` | Get detailed issue info | `get_issue(issue_key="PROJ-12345")` |
+| `get_issue` | Get detailed issue info | `get_issue(issue_key="PROJ-12345", custom_fields=["customfield_10200"])` |
 | `search_issues` | Search with JQL | `search_issues(jql="project = PROJ")` |
 | `create_issue` | Create new issue | `create_issue(project_key="PROJ", issue_type="Bug", summary="...")` |
 | `update_issue` | Update existing issue | `update_issue(issue_key="PROJ-12345", summary="New title")` |
@@ -26,6 +26,7 @@ A clean and focused Model Context Protocol (MCP) server that provides seamless i
 | `get_issue_types` | Get available types | `get_issue_types(project_key="PROJ")` |
 | `get_my_issues` | Get assigned issues | `get_my_issues(max_results=20)` |
 | `get_project_issues` | Get project issues | `get_project_issues(project_key="PROJ")` |
+| `get_field_ids` | Look up custom field IDs by name | `get_field_ids(issue_key="PROJ-123", name_filter="sprint")` |
 
 ## 🚀 Quick Start (5 minutes)
 
@@ -181,6 +182,18 @@ transition_issue(
 ```python
 # Get details for issue PROJ-12345
 get_issue(issue_key="PROJ-12345")
+
+# Include custom fields (values in Atlassian Document Format are rendered as text)
+get_issue(issue_key="PROJ-12345", custom_fields=["customfield_10200", "customfield_10300"])
+```
+
+### Discover Custom Field IDs
+```python
+# Find a custom field by name
+get_field_ids(issue_key="PROJ-12345", name_filter="sprint")
+
+# List all custom fields for an issue
+get_field_ids(issue_key="PROJ-12345")
 ```
 
 ### Search Issues
